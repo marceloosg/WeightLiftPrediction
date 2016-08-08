@@ -5,7 +5,7 @@ date: "3 de agosto de 2016"
 output: html_document
 ---
 ```{r,echo=FALSE}
-library(RefManageR)
+suppressPackageStartupMessages(library(RefManageR))
 bib <- ReadBib("document.bib", check = FALSE)
 BibOptions(check.entries = FALSE, style = "markdown", bib.style = "numeric", cite.style = 'numeric')
 ```
@@ -55,27 +55,26 @@ They combined the result ("Bagging") of 10 random forest used for classification
 
 ## Downloading Data
 ```{r}
-#training=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","trainingraw.csv")
-#testing=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","testing.csv")
+#training=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","csv/trainingraw.csv")
+#testing=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","csv/testing.csv")
 ```
 
 ## Cleaning Data
 ```{r}
-#command="sed 's:\"\"::g' trainingraw.csv > training.csv"
+#command="sed 's:\"\"::g' csv/trainingraw.csv > csv/training.csv"
 #system(command)
 ```
 
 ## Loading Data
 
 ```{r}
-library(data.table)
+suppressPackageStartupMessages(library(data.table))
 vec=rep("numeric",160)
 whichar=1:7
 vec[whichar]=rep("character",length(whichar))
 vec[160]="factor"
-library(data.table)
-trainingraw=data.table(read.csv("training.csv",na.strings=c("N",NA,"", "#DIV/0!"),stringsAsFactors = F))
-testingraw=data.table(read.csv("testing.csv",na.strings=c("N",NA,"", "#DIV/0!"),stringsAsFactors = F))
+trainingraw=data.table(read.csv("csv/training.csv",na.strings=c("N",NA,"", "#DIV/0!"),stringsAsFactors = F))
+testingraw=data.table(read.csv("csv/testing.csv",na.strings=c("N",NA,"", "#DIV/0!"),stringsAsFactors = F))
 #replacing incorrectly named column 16: skewness_roll_belt.1
 colnames(trainingraw)[16] = "skewness_pitch_belt"
 ```
@@ -106,18 +105,53 @@ From the data we can see that 90% of the window size is about 0.9 seconds:
 ```{r}
 explore=trainingraw
 explore$pt=as.double(explore$raw_timestamp_part_1)+explore$raw_timestamp_part_2/1000000
-h=hist(unique(explore[,.(pt,window_size=max(pt)-min(pt)),by=num_window])$window_size,breaks = 4)
+h=hist(unique(explore[,.(pt,window_size=max(pt)-min(pt)),by=num_window])$window_size,breaks = 4,plot=F)
 data.table(percentage=h$counts/sum(h$counts)*100, window_size=h$mids)
 ```
 From the literature the optimal window size is about 2.5 seconds. For optimal performance the window should be recalculated.
 Let filter only the raw features from the dataset in order to calculate the derived columns:
 ```{r}
 notderived=setdiff(1:160,grep("avg|std|var|kurt|skew|min|max|ampl",incomplete.dt$desc))
+source("./functions.R")
+pre_training=imput.values(trainingraw)
 cnames=colnames(training)
 belt=cnames|"belt"
-beltroll=belt|"roll"|"(mean|var)"
-beltaccer=belt|"acc"|"(max|amp|var)"
+br=belt|"roll"|"(mean|var)"
+ba=belt|"acc"|"(max|amp|var)"
+bg=belt|"gyro"|"var"
+bm=belt|"mag"|"var"
+sbelt=br+ba+bg+bm
+
+arm=cnames|"_arm"
+aa=arm|"acc"|"var"
+am=arm|"mag"|"(min|max)"
+sarm=aa+am
+
+dumbbell=cnames|"dumbbell"
+da=dumbbell|"acc"|"max"
+dg=dumbbell|"gyro"|"var"
+dm=dumbbell|"mag"|"(min|max)"
+sdumbbell=da+dg+dm
+
+forearm=cnames|"forearm"
+fp=forearm|"pitch"|"sum"
+fg=forearm|"gyro"|"(min|max)"
+sforearm=fp+fg
+selectedFeatures=sbelt+sarm+sdumbbell+sforearm
+training=select(pre_training,one_of(selectedFeatures+"num_window"))
+training=unique(merge(select(trainingraw,num_window,classe),training,all=T,by="num_window"))
 ```
+# Training
+
+```{r}
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(randomForest))
+ctrl = trainControl(method="repeatedcv", number=10, repeats=5, selectionFunction = "oneSE")
+in_train = createDataPartition(training$classe, p=.75, list=FALSE)
+
+trf = train( classe ~ .)
+```
+
 #Bibliography
 
 ```{r, results='asis',echo=FALSE}

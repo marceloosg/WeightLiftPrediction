@@ -1,17 +1,23 @@
 library(dplyr)
 library(e1071) 
+# Easy usefull operators to make R become bash like.
 
 `|.character` = function(e1,e2){grep(e2,e1,value=T)}
 `|.default` =.Primitive("|")
 `|` = function (e1, e2) UseMethod('|')
 
-`-.character` = function(e1,e2){ifelse(e1 == "",e2, c(e1,e2))}
+`-.character` = function(e1,e2){grep(e2,e1,value=T,invert=T)}
 `-.default` =.Primitive("-")
 `-` = function (e1, e2) UseMethod('-')
 
 
+`+.character` = function(e1,e2){r=e2;if(min(nchar(e1)) > 0) r=c(e1,e2);r}
+`+.default` =.Primitive("+")
+`+` = function (e1, e2) UseMethod('+')
+
+#Imput value function
 amplitude=function(vetor){max(vetor)-min(vetor)}
-getmodule=function(dataset){
+imput.values=function(dataset){
         quantities=c("accel","gyros","magnet")
         sensors=c("belt","arm","forearm","dumbbell")
         merged=c()
