@@ -110,11 +110,11 @@ data.table(percentage=h$counts/sum(h$counts)*100, window_size=h$mids)
 ```
 From the literature the optimal window size is about 2.5 seconds. For optimal performance the window should be recalculated.
 Let filter only the raw features from the dataset in order to calculate the derived columns:
-```{r}
+```{r,cache=F}
 notderived=setdiff(1:160,grep("avg|std|var|kurt|skew|min|max|ampl",incomplete.dt$desc))
 source("./functions.R")
 pre_training=imput.values(trainingraw)
-cnames=colnames(training)
+cnames=colnames(pre_training)
 belt=cnames|"belt"
 br=belt|"roll"|"(mean|var)"
 ba=belt|"acc"|"(max|amp|var)"
@@ -142,15 +142,57 @@ training=select(pre_training,one_of(selectedFeatures+"num_window"))
 training=unique(merge(select(trainingraw,num_window,classe),training,all=T,by="num_window"))
 ```
 # Training
+As a Training guide we follow a procedure close to this [link](https://www.r-bloggers.com/predictive-modelling-fun-with-the-caret-package/). We use the random forest algorithm together with the caret package.
+First we remove the num_windows column and rows with incomplete data. Next the data is partitioned (75% training, 25% testing), then for cross-validation the data is divided in 10 folds and the procedure is repeated 5 times, each time a different forest is constructed randomly. The confusion matrix for the training data is plotted.
 
-```{r}
+```{r,cache=F}
+set.seed(814)
 suppressPackageStartupMessages(library(caret))
 suppressPackageStartupMessages(library(randomForest))
+training=select(training,-num_window)
+training=training[complete.cases(training)]
 ctrl = trainControl(method="repeatedcv", number=10, repeats=5, selectionFunction = "oneSE")
 in_train = createDataPartition(training$classe, p=.75, list=FALSE)
-
-trf = train( classe ~ .)
+trf = train(data=training, classe ~ .,method="rf",
+            metric="Kappa", trcontrol=ctrl, subset=in_train)
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(reshape2))
+confusion=rbindlist(lapply(1:5,function(i){data.table(t(trf$finalModel$confusion[i,1:5]/sum(trf$finalModel$confusion[i,1:5])))}))
+confusion.m=as.matrix(confusion)
+rownames(confusion.m)=colnames(confusion.m)
+confusion.t=melt(confusion.m)
+colnames(confusion.t)=c("Predicted","Reference","value")
+setorder(confusion.t,-Reference)
+setorder(confusion.t,Predicted)
+confusion.t=within(confusion.t,
+       Reference <- ordered(Reference, levels = rev(sort(unique(Reference)))))
+rgb.pal=colorRampPalette(c("white","yellow","red","black"))
+p <- ggplot(confusion.t, aes(Predicted, Reference)) %+% geom_tile(aes(fill = (value)) ) %+% scale_fill_gradientn(limits=c(0,1),colours=rgb.pal(11),breaks=0:10/10)%+% geom_text(aes(label=as.integer(value*100)/100),color="blue")
+p
 ```
+ The expected accuracy and out-of-sample error is 0.79(03), and 0.73(03) for the Kappa estimate.
+ 
+ 
+# Testing
+
+
+```{r,cache=F}
+set.seed(1814)
+test= as.data.frame(training)[-in_train,]
+pred.rf = predict(trf, test, "raw")
+c=confusionMatrix(pred.rf, test$classe)
+plot.confusion.matrix(c)
+```
+
+We see an optimistic result in the confusion matrix of the training set, as usual, the accuraccy lowers as we try to fit our model to unseen data. We can see an in class (A) sensitivity drop from `r confusion[1,][[1]]`% to `r con[1,][[1]]`%. The overall accuracy is about 83% (0.7738, 0.8787), 95% CI. Even though there is an imbalance in the data, the reported balanced accuracy of the classes are still high. The accuraccy obtained in this report is far lower than the one obtained in the original article (98.2 %), there are several factors that could be responsable for this:
+* Unbalanced classed
+* Sub-optimal Window sizes (1,0s instead of 2.5s)
+* Probably different imputing criteria
+* Reduced Sample (19622 samples against 39242)
+* Different number of forests (500 forest against 10)
+
+# Conclusion
+In this report a random forest algorithm is applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed in the original article. Due to time constraints and incomplete data the results obtained in this report are inferior to the ones in the literature (83% agaisnt 98% accuracy). However, if observed alone,  it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuraccy within the estimated confidence interval 0.79(03) E [77 , 87].
 
 #Bibliography
 

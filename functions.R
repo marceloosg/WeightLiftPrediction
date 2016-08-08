@@ -1,5 +1,5 @@
-library(dplyr)
-library(e1071) 
+suppressPackageMessages(library(dplyr))
+suppressPackageStartupMessages(library(e1071) )
 # Easy usefull operators to make R become bash like.
 
 `|.character` = function(e1,e2){grep(e2,e1,value=T)}
@@ -50,8 +50,20 @@ imput.values=function(dataset){
         merged
 }
 
+plot.confusion.matrix=function(c){
+        print(c)
+        ctable=c$table
+        con=as.matrix(rbindlist(lapply(1:5,function(i){data.table(t(ctable[i,1:5]/sum(ctable[i,1:5])))})))
+        rownames(con)=colnames(con)
+        confusion.test=melt(con)
+        colnames(confusion.test)=c("Predicted","Reference","value")
+        setorder(confusion.test,-Reference)
+        setorder(confusion.test,Predicted)
+        confusion.test=within(confusion.test,Reference <- factor(ordered(Reference, levels = rev(sort(unique(Reference))))))
+        rgb.pal=colorRampPalette(c("white","yellow","red","black"))
+        p2 <- ggplot(confusion.test, aes(Predicted, Reference)) %+% geom_tile(aes(fill = (value)) ) %+% 
+                scale_fill_gradientn(limits=c(0,1),colours=rgb.pal(11),breaks=0:10/10)%+% 
+                geom_text(aes(label=as.integer(value*100)/100),color="blue")
+        p2
+}
 
-#aincompleteness=unlist(lapply(1:dim(training)[2],function(col){sum(is.na(training[[col]]))}))/dim(training)[1]*100
-#aincomplete.dt=data.table(percentage=aincompleteness,description=colnames(training))
-#ahighly.incomplete.columns=sum(aincomplete.dt$percentage >1)
-#acomplete.columns=sum(aincomplete.dt$percentage == 0)
