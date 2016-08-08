@@ -55,14 +55,20 @@ They combined the result ("Bagging") of 10 random forest used for classification
 
 ## Downloading Data
 ```{r}
-#training=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","csv/trainingraw.csv")
-#testing=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","csv/testing.csv")
+if(!file.exists("./csv/trainingraw.csv")) {
+training=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","csv/trainingraw.csv")
+}
+if(!file.exists("./csv/testing.csv")) {
+testing=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","csv/testing.csv")
+}
 ```
 
 ## Cleaning Data
 ```{r}
-#command="sed 's:\"\"::g' csv/trainingraw.csv > csv/training.csv"
-#system(command)
+if(!file.exists("./csv/training.csv")) {
+command="sed 's:\"\"::g' csv/trainingraw.csv > csv/training.csv"
+system(command)
+}
 ```
 
 ## Loading Data
@@ -75,7 +81,7 @@ vec[whichar]=rep("character",length(whichar))
 vec[160]="factor"
 trainingraw=data.table(read.csv("csv/training.csv",na.strings=c("N",NA,"", "#DIV/0!"),stringsAsFactors = F))
 testingraw=data.table(read.csv("csv/testing.csv",na.strings=c("N",NA,"", "#DIV/0!"),stringsAsFactors = F))
-#replacing incorrectly named column 16: skewness_roll_belt.1
+#renaming incorrectly named column 16: skewness_roll_belt.1
 colnames(trainingraw)[16] = "skewness_pitch_belt"
 ```
 
@@ -89,11 +95,15 @@ Most of the columns of this dataset are incomplete,  special attention must be g
 ```{r}
  incompleteness=unlist(lapply(1:160,function(col){sum(is.na(trainingraw[[col]]))}))/dim(trainingraw)[1]*100
  incomplete.dt=data.table(percentage=incompleteness,description=colnames(trainingraw))
- highly.incomplete.columns=sum(incomplete.dt$percentage >97)
+ highly.incomplete.columns=sum(incompelete.dt$percentage >97)
  complete.columns=sum(incomplete.dt$percentage == 0)
+ h2=hist(incomplete.dt$percentage,  xlab="% of NA in a Column",
+         ylab="# of columns",main="Histogram (sparse columns)")
+
+plot(h2) 
 ```
 
-Only `r complete.columns` columns are completely filled with data. An explanation for this incompleteness could not be found, however, the `r highly.incomplete.columns` incomplete columns are derived from the 52 measured features.  
+Only `r complete.columns` columns are completely filled with data. An explanation for this incompleteness could not be found, however, the `r highly.incomplete.columns` highly incomplete columns (97% empty) are derived from the 52 measured features.  
 Each calculation were performed within a time-window in which the exercise was performed with a 0.5 seconds overlap between windows. It is not clear whether the calculated values were obtained from unavailble data or if it were obtained from the data within the time-window defined in the dataset by the num_window column. In the former case the values can be recomputed, but in that case an exercise can only be identified if a whole time-window is provided (context). An isolated data point (test case) usually can not give enough information to infer if the exercise is being properly executed (similar to evaluating the performance of an exercise through a snapshot instead of a movie).
 We can see that the necessary context is provided withing the testing dataset:
 ```{r}
@@ -106,6 +116,8 @@ From the data we can see that 90% of the window size is about 0.9 seconds:
 explore=trainingraw
 explore$pt=as.double(explore$raw_timestamp_part_1)+explore$raw_timestamp_part_2/1000000
 h=hist(unique(explore[,.(pt,window_size=max(pt)-min(pt)),by=num_window])$window_size,breaks = 4,plot=F)
+h$xname="Window Size Histogram"
+plot(h)
 data.table(percentage=h$counts/sum(h$counts)*100, window_size=h$mids)
 ```
 From the literature the optimal window size is about 2.5 seconds. For optimal performance the window should be recalculated.
@@ -115,35 +127,14 @@ notderived=setdiff(1:160,grep("avg|std|var|kurt|skew|min|max|ampl",incomplete.dt
 source("./functions.R")
 pre_training=imput.values(trainingraw)
 cnames=colnames(pre_training)
-belt=cnames|"belt"
-br=belt|"roll"|"(mean|var)"
-ba=belt|"acc"|"(max|amp|var)"
-bg=belt|"gyro"|"var"
-bm=belt|"mag"|"var"
-sbelt=br+ba+bg+bm
-
-arm=cnames|"_arm"
-aa=arm|"acc"|"var"
-am=arm|"mag"|"(min|max)"
-sarm=aa+am
-
-dumbbell=cnames|"dumbbell"
-da=dumbbell|"acc"|"max"
-dg=dumbbell|"gyro"|"var"
-dm=dumbbell|"mag"|"(min|max)"
-sdumbbell=da+dg+dm
-
-forearm=cnames|"forearm"
-fp=forearm|"pitch"|"sum"
-fg=forearm|"gyro"|"(min|max)"
-sforearm=fp+fg
-selectedFeatures=sbelt+sarm+sdumbbell+sforearm
+selectedFeatures=select.features(cnames)
+#Only 17 features are selected by this function (See Review)
 training=select(pre_training,one_of(selectedFeatures+"num_window"))
 training=unique(merge(select(trainingraw,num_window,classe),training,all=T,by="num_window"))
 ```
 # Training
-As a Training guide we follow a procedure close to this [link](https://www.r-bloggers.com/predictive-modelling-fun-with-the-caret-package/). We use the random forest algorithm together with the caret package.
-First we remove the num_windows column and rows with incomplete data. Next the data is partitioned (75% training, 25% testing), then for cross-validation the data is divided in 10 folds and the procedure is repeated 5 times, each time a different forest is constructed randomly. The confusion matrix for the training data is plotted.
+A procedure close to the one in this [link](https://www.r-bloggers.com/predictive-modelling-fun-with-the-caret-package/) was used to train the data. The random forest algorithm was use together with the caret package.
+First, the num_windows column and rows with incomplete data are removed. Next the data is partitioned (75% training, 25% testing), then a 10 fold cross-validation is performed and the procedure is repeated 5 times, each time a different forest is constructed randomly. The confusion matrix for the training data is plotted at the end.
 
 ```{r,cache=F}
 set.seed(814)
@@ -155,36 +146,33 @@ ctrl = trainControl(method="repeatedcv", number=10, repeats=5, selectionFunction
 in_train = createDataPartition(training$classe, p=.75, list=FALSE)
 trf = train(data=training, classe ~ .,method="rf",
             metric="Kappa", trcontrol=ctrl, subset=in_train)
-suppressPackageStartupMessages(library(ggplot2))
-suppressPackageStartupMessages(library(reshape2))
-confusion=rbindlist(lapply(1:5,function(i){data.table(t(trf$finalModel$confusion[i,1:5]/sum(trf$finalModel$confusion[i,1:5])))}))
-confusion.m=as.matrix(confusion)
-rownames(confusion.m)=colnames(confusion.m)
-confusion.t=melt(confusion.m)
-colnames(confusion.t)=c("Predicted","Reference","value")
-setorder(confusion.t,-Reference)
-setorder(confusion.t,Predicted)
-confusion.t=within(confusion.t,
-       Reference <- ordered(Reference, levels = rev(sort(unique(Reference)))))
-rgb.pal=colorRampPalette(c("white","yellow","red","black"))
-p <- ggplot(confusion.t, aes(Predicted, Reference)) %+% geom_tile(aes(fill = (value)) ) %+% scale_fill_gradientn(limits=c(0,1),colours=rgb.pal(11),breaks=0:10/10)%+% geom_text(aes(label=as.integer(value*100)/100),color="blue")
-p
+t.table=trf$finalModel$confusion
+pt=plot.confusion.matrix(t.table)
+confusion=round(pt[[1]],digits=2)
+plot(pt[[2]])
+acct=as.data.table(round(trf$results,digits=2) )[1]
+
 ```
- The expected accuracy and out-of-sample error is 0.79(03), and 0.73(03) for the Kappa estimate.
+ The expected accuracy and out-of-sample error is `r acct$Accuracy` +- `r acct$AccuracySD`, and `r acct$Kappa` +- `r acct$KappaSD` for the Kappa estimate.
  
  
 # Testing
 
 
 ```{r,cache=F}
-set.seed(1814)
+#set.seed(1814)
 test= as.data.frame(training)[-in_train,]
 pred.rf = predict(trf, test, "raw")
 c=confusionMatrix(pred.rf, test$classe)
-plot.confusion.matrix(c)
+c
+acc=as.data.table(t(round(c$overall,digits = 2)))
+pt2=plot.confusion.matrix(c$table)
+con=round(pt2[[1]],digits=2)
+plot(pt2[[2]])
 ```
 
-We see an optimistic result in the confusion matrix of the training set, as usual, the accuraccy lowers as we try to fit our model to unseen data. We can see an in class (A) sensitivity drop from `r confusion[1,][[1]]`% to `r con[1,][[1]]`%. The overall accuracy is about 83% (0.7738, 0.8787), 95% CI. Even though there is an imbalance in the data, the reported balanced accuracy of the classes are still high. The accuraccy obtained in this report is far lower than the one obtained in the original article (98.2 %), there are several factors that could be responsable for this:
+We see an optimistic result in the confusion matrix of the training set, as usual, the accuraccy lowers as we try to fit our model to unseen data. We can see an in class (A) sensitivity drop from `r confusion[1,][[1]]`% to `r con[1,][[1]]`%. The overall accuracy is about `r acc$Accuracy`% (`r acc$AccuracyLower`,`r acc$AccuracyUpper`), 95% CI. Even though there is an imbalance in the data, the reported balanced accuracy of the classes are still high. The accuraccy obtained in this report is far lower than the one obtained in the original article (98.2 %), there are several factors that could be responsable for this:
+
 * Unbalanced classed
 * Sub-optimal Window sizes (1,0s instead of 2.5s)
 * Probably different imputing criteria
@@ -192,7 +180,7 @@ We see an optimistic result in the confusion matrix of the training set, as usua
 * Different number of forests (500 forest against 10)
 
 # Conclusion
-In this report a random forest algorithm is applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed in the original article. Due to time constraints and incomplete data the results obtained in this report are inferior to the ones in the literature (83% agaisnt 98% accuracy). However, if observed alone,  it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuraccy within the estimated confidence interval 0.79(03) E [77 , 87].
+In this report a random forest algorithm is applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed by `r Citet(bib, 1)`. Due to time constraints and incomplete data the results obtained in this report are inferior to the ones in the literature (83% agaisnt 98% accuracy). However, if observed alone,  it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuraccy within the estimated confidence interval `r acct$Accuracy` +- `r acct$AccuracySD` E (`r acc$AccuracyLower`,`r acc$AccuracyUpper`). The feature selection was not implemented in this report, instead we used the result presented in the article, a whole new array of ressults could come from different features, due to time limitations the analisys was restricted to the same set of features to enable a possible comparison. There was insufficient time to perform the  leave-one-out cross-validation.
 
 #Bibliography
 

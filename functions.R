@@ -1,5 +1,6 @@
-suppressPackageMessages(library(dplyr))
+suppressMessages(library(dplyr))
 suppressPackageStartupMessages(library(e1071) )
+
 # Easy usefull operators to make R become bash like.
 
 `|.character` = function(e1,e2){grep(e2,e1,value=T)}
@@ -15,6 +16,8 @@ suppressPackageStartupMessages(library(e1071) )
 `+.default` =.Primitive("+")
 `+` = function (e1, e2) UseMethod('+')
 
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(reshape2))
 #Imput value function
 amplitude=function(vetor){max(vetor)-min(vetor)}
 imput.values=function(dataset){
@@ -50,9 +53,7 @@ imput.values=function(dataset){
         merged
 }
 
-plot.confusion.matrix=function(c){
-        print(c)
-        ctable=c$table
+plot.confusion.matrix=function(ctable){
         con=as.matrix(rbindlist(lapply(1:5,function(i){data.table(t(ctable[i,1:5]/sum(ctable[i,1:5])))})))
         rownames(con)=colnames(con)
         confusion.test=melt(con)
@@ -64,6 +65,31 @@ plot.confusion.matrix=function(c){
         p2 <- ggplot(confusion.test, aes(Predicted, Reference)) %+% geom_tile(aes(fill = (value)) ) %+% 
                 scale_fill_gradientn(limits=c(0,1),colours=rgb.pal(11),breaks=0:10/10)%+% 
                 geom_text(aes(label=as.integer(value*100)/100),color="blue")
-        p2
+        list(con,p2)
 }
+select.features=function(cnames){
+        belt=cnames|"belt"
+        br=belt|"roll"|"(mean|var)"
+        ba=belt|"acc"|"(max|amp|var)"
+        bg=belt|"gyro"|"var"
+        bm=belt|"mag"|"var"
+        sbelt=br+ba+bg+bm
+        
+        arm=cnames|"_arm"
+        aa=arm|"acc"|"var"
+        am=arm|"mag"|"(min|max)"
+        sarm=aa+am
+        
+        dumbbell=cnames|"dumbbell"
+        da=dumbbell|"acc"|"max"
+        dg=dumbbell|"gyro"|"var"
+        dm=dumbbell|"mag"|"(min|max)"
+        sdumbbell=da+dg+dm
+        
+        forearm=cnames|"forearm"
+        fp=forearm|"pitch"|"sum"
+        fg=forearm|"gyro"|"(min|max)"
+        sforearm=fp+fg
 
+        sbelt+sarm+sdumbbell+sforearm
+}
