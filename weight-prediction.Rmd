@@ -95,12 +95,10 @@ Most of the columns of this dataset are incomplete,  special attention must be g
 ```{r}
  incompleteness=unlist(lapply(1:160,function(col){sum(is.na(trainingraw[[col]]))}))/dim(trainingraw)[1]*100
  incomplete.dt=data.table(percentage=incompleteness,description=colnames(trainingraw))
- highly.incomplete.columns=sum(incompelete.dt$percentage >97)
+ highly.incomplete.columns=sum(incomplete.dt$percentage >97)
  complete.columns=sum(incomplete.dt$percentage == 0)
  h2=hist(incomplete.dt$percentage,  xlab="% of NA in a Column",
          ylab="# of columns",main="Histogram (sparse columns)")
-
-plot(h2) 
 ```
 
 Only `r complete.columns` columns are completely filled with data. An explanation for this incompleteness could not be found, however, the `r highly.incomplete.columns` highly incomplete columns (97% empty) are derived from the 52 measured features.  
