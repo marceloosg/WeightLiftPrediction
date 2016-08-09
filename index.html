@@ -195,10 +195,10 @@ $(document).ready(function () {
 <div id="downloading-data" class="section level2">
 <h2>Downloading Data</h2>
 <pre class="r"><code>if(!file.exists(&quot;./csv/trainingraw.csv&quot;)) {
-training=download.file(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;,&quot;csv/trainingraw.csv&quot;)
+training.status=download.file(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;,&quot;csv/trainingraw.csv&quot;)
 }
 if(!file.exists(&quot;./csv/testing.csv&quot;)) {
-testing=download.file(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;,&quot;csv/testing.csv&quot;)
+testing.status=download.file(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;,&quot;csv/testing.csv&quot;)
 }</code></pre>
 </div>
 <div id="cleaning-data" class="section level2">
@@ -278,8 +278,9 @@ pre_training=imput.values(trainingraw)</code></pre>
 <pre class="r"><code>cnames=colnames(pre_training)
 selectedFeatures=select.features(cnames)
 #Only 17 features are selected by this function (See Review)
-training=select(pre_training,one_of(selectedFeatures+&quot;num_window&quot;))
-training=unique(merge(select(trainingraw,num_window,classe),training,all=T,by=&quot;num_window&quot;))</code></pre>
+trainings=select(pre_training,one_of(selectedFeatures+&quot;num_window&quot;))
+trainings=unique(merge(select(trainingraw,num_window,classe),
+                       trainings,all=T,by=&quot;num_window&quot;))</code></pre>
 </div>
 <div id="training" class="section level1">
 <h1>Training</h1>
@@ -287,7 +288,7 @@ training=unique(merge(select(trainingraw,num_window,classe),training,all=T,by=&q
 <pre class="r"><code>set.seed(814)
 suppressPackageStartupMessages(library(caret))
 suppressPackageStartupMessages(library(randomForest))
-training=select(training,-num_window)
+training=select(trainings,-num_window)
 training=training[complete.cases(training)]
 ctrl = trainControl(method=&quot;repeatedcv&quot;, number=10, repeats=5, selectionFunction = &quot;oneSE&quot;)
 in_train = createDataPartition(training$classe, p=.75, list=FALSE)
@@ -301,8 +302,8 @@ plot(pt[[2]])</code></pre>
 <pre class="r"><code>acct=as.data.table(round(trf$results,digits=2) )[1]</code></pre>
 <p>The expected accuracy and out-of-sample error is 0.79 +- 0.02, and 0.74 +- 0.03 for the Kappa estimate.</p>
 </div>
-<div id="testing" class="section level1">
-<h1>Testing</h1>
+<div id="validation" class="section level1">
+<h1>Validation</h1>
 <pre class="r"><code>#set.seed(1814)
 test= as.data.frame(training)[-in_train,]
 pred.rf = predict(trf, test, &quot;raw&quot;)
@@ -353,9 +354,47 @@ plot(pt2[[2]])</code></pre>
 <li>Different number of forests (500 forest against 10)</li>
 </ul>
 </div>
+<div id="test-set" class="section level1">
+<h1>Test set</h1>
+<p>In the real dataset you must accquire a lot a data to create a window to which you apply the derived features ( see imput.value function). In this test set each problem provides only a single instance instead a 1,0s window worth of data. In that case, we retrieve the derived features using the num_window as a key. We could even retrieve the original class, since the num_window in the test set is contained in the training set, but we restrict to the derived columns in order to compare how the model would perform with real data. Since we are using data from the training set, we are actually getting a biased result. The alternative would be to model based on the raw features, contrary to the oriented in the original article. The model in that case would underperform.</p>
+<div id="imputing-test-set-with-data-from-the-training-dataset" class="section level2">
+<h2>Imputing test set with data from the training dataset</h2>
+<pre class="r"><code> testset=unique(merge(select(testingraw,problem_id,num_window),
+                      trainings,by=&quot;num_window&quot;))
+setorder(testset,problem_id)
+pred.test.rf = predict(trf, testset, &quot;raw&quot;)
+result=select(testset,problem_id,classe)
+result$predicted.classe=pred.test.rf
+result$classe=as.factor(result$classe)
+result$isequal=pred.test.rf==result$classe
+result</code></pre>
+<pre><code>##     problem_id classe predicted.classe isequal
+##  1:          1      B                B    TRUE
+##  2:          2      A                A    TRUE
+##  3:          3      B                B    TRUE
+##  4:          4      A                A    TRUE
+##  5:          5      A                A    TRUE
+##  6:          6      E                E    TRUE
+##  7:          7      D                D    TRUE
+##  8:          8      B                B    TRUE
+##  9:          9      A                A    TRUE
+## 10:         10      A                A    TRUE
+## 11:         11      B                B    TRUE
+## 12:         12      C                C    TRUE
+## 13:         13      B                B    TRUE
+## 14:         14      A                A    TRUE
+## 15:         15      E                E    TRUE
+## 16:         16      E                E    TRUE
+## 17:         17      A                A    TRUE
+## 18:         18      B                B    TRUE
+## 19:         19      B                B    TRUE
+## 20:         20      B                B    TRUE</code></pre>
+<p>That way we got 20 out 20 cases correct, 100% accuracy, that is expected since we used data from the training set to imput the derived features of the test set. The validation part is a more reliable result for the accuracy of this model since the random forest is applied to completely unseen data.</p>
+</div>
+</div>
 <div id="conclusion" class="section level1">
 <h1>Conclusion</h1>
-<p>In this report a random forest algorithm is applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed by <a href="http://doi.acm.org/10.1145/2459236.2459256">Velloso, Bulling, Gellersen, et al. [1]</a>. Due to time constraints and incomplete data the results obtained in this report are inferior to the ones in the literature (83% agaisnt 98% accuracy). However, if observed alone, it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuraccy within the estimated confidence interval 0.79 +- 0.02 E (0.79,0.89). The feature selection was not implemented in this report, instead we used the result presented in the article, a whole new array of ressults could come from different features, due to time limitations the analisys was restricted to the same set of features to enable a possible comparison. There was insufficient time to perform the leave-one-out cross-validation.</p>
+<p>In this report a random forest algorithm was applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed by <a href="http://doi.acm.org/10.1145/2459236.2459256">Velloso, Bulling, Gellersen, et al. [1]</a>. Due to time constraints and incomplete data the results obtained in this report are inferior to the ones in the literature (83% agaisnt 98% accuracy). However, if observed alone, it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuraccy within the estimated confidence interval 0.79 +- 0.02 E (0.79,0.89). The feature selection was not implemented in this report, instead we used the result presented in the article, a whole new array of ressults could come from different features, due to time limitations the analisys was restricted to the same set of features to enable a possible comparison. There was insufficient time to perform the leave-one-out cross-validation.</p>
 </div>
 <div id="bibliography" class="section level1">
 <h1>Bibliography</h1>
