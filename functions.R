@@ -93,3 +93,4 @@ select.features=function(cnames){
 
         sbelt+sarm+sdumbbell+sforearm
 }
+
