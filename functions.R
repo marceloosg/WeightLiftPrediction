@@ -1,5 +1,5 @@
 suppressMessages(library(dplyr))
-suppressPackageStartupMessages(library(e1071) )
+suppressMessages(library(e1071) )
 
 # Easy usefull operators to make R become bash like.
 

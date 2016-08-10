@@ -50,7 +50,8 @@ They used Mark Hall algorithm with "Best First" strategy for feature selection. 
     + gyro
         * maximum and minimum
 
-They combined the result ("Bagging") of 10 random forest used for classification with each forest implemented with 10 trees. The classifier was tested with a 10-fold cross-validation. The overall recognition performance was of 98.2% (Weighted average). With leave-one-subject-out validation test the accuraccy is much lower (78.2%) due to the small size of the database. 
+They combined the result ("Bagging") of 10 random forest used for classification with each forest implemented with 10 trees. The classifier was tested with a 10-fold cross-validation. The overall recognition performance was of 98.2% (Weighted average). With leave-one-subject-out validation test the accuracy is much lower (78.2%) due to the small size of the database. 
+
 # Processing Data
 
 ## Downloading Data
@@ -119,7 +120,7 @@ plot(h)
 data.table(percentage=h$counts/sum(h$counts)*100, window_size=h$mids)
 ```
 From the literature the optimal window size is about 2.5 seconds. For optimal performance the window should be recalculated.
-Let filter only the raw features from the dataset in order to calculate the derived columns:
+Lets filter only the raw features from the dataset in order to calculate the derived columns:
 ```{r,cache=F}
 notderived=setdiff(1:160,grep("avg|std|var|kurt|skew|min|max|ampl",incomplete.dt$desc))
 source("./functions.R")
@@ -137,8 +138,11 @@ First, the num_windows column and rows with incomplete data are removed. Next th
 
 ```{r,cache=T}
 set.seed(814)
-suppressPackageStartupMessages(library(caret))
-suppressPackageStartupMessages(library(randomForest))
+suppressMessages(library(randomForest))
+suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
+suppressMessages(library(caret))
+
 training=select(trainings,-num_window)
 training=training[complete.cases(training)]
 ctrl = trainControl(method="repeatedcv", number=10, repeats=5, selectionFunction = "oneSE")
@@ -170,7 +174,7 @@ con=round(pt2[[1]],digits=2)
 plot(pt2[[2]])
 ```
 
-We see an optimistic result in the confusion matrix of the training set, as usual, the accuraccy lowers as we try to fit our model to unseen data. We can see an in class (A) sensitivity drop from `r confusion[1,][[1]]`% to `r con[1,][[1]]`%. The overall accuracy is about `r acc$Accuracy`% (`r acc$AccuracyLower`,`r acc$AccuracyUpper`), 95% CI. Even though there is an imbalance in the data, the reported balanced accuracy of the classes are still high. The accuraccy obtained in this report is far lower than the one obtained in the original article (98.2 %), there are several factors that could be responsable for this:
+We see an optimistic result in the confusion matrix of the training set, as usual, the accuracy lowers as we try to fit our model to unseen data. We can that the Precision for class A drops from `r confusion[1,][[1]]`% to `r con[1,][[1]]`%. The overall accuracy is about `r acc$Accuracy`% (`r acc$AccuracyLower`,`r acc$AccuracyUpper`), 95% CI. Even though there is an imbalance in the data, the reported balanced accuracy of the classes are still high. The accuracy obtained in this report is far lower than the one obtained in the original article (98.2 %), there are several factors that could be responsable for this:
 
 * Unbalanced classed
 * Sub-optimal Window sizes (1,0s instead of 2.5s)
@@ -182,7 +186,12 @@ We see an optimistic result in the confusion matrix of the training set, as usua
 In the real dataset you must accquire a lot a data to create a window to which you apply the derived features ( see imput.value function). In this test set each problem provides only a single instance instead a 1,0s window worth of data. In that case, we retrieve the derived features using the num_window as a key. We could even retrieve the original class, since the num_window in the test set is contained in the training set, but we restrict to the derived columns in order to compare how the model would perform with real data. Since we are using data from the training set, we are actually getting a biased result. The alternative would be to model based on the raw features, contrary to the oriented in the original article. The model in that case would underperform.
 
 ## Imputing test set with data from the training dataset
-```{r }
+```{r ,cache=T}
+suppressMessages(library(randomForest))
+suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
+suppressMessages(library(caret))
+
  testset=unique(merge(select(testingraw,problem_id,num_window),
                       trainings,by="num_window"))
 setorder(testset,problem_id)
@@ -196,7 +205,7 @@ result
 That way we got `r sum(result$isequal)` out 20 cases correct, `r sum(result$isequal)/20*100`% accuracy, that is expected since we used data from the training set to imput the derived features of the test set. The validation part is a more reliable result for the accuracy of this model since the random forest is applied to completely unseen data.
 
 # Conclusion
-In this report a random forest algorithm was applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed by `r Citet(bib, 1)`. Due to time constraints and incomplete data the results obtained in this report are inferior to the ones in the literature (83% agaisnt 98% accuracy). However, if observed alone,  it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuraccy within the estimated confidence interval `r acct$Accuracy` +- `r acct$AccuracySD` E (`r acc$AccuracyLower`,`r acc$AccuracyUpper`). The feature selection was not implemented in this report, instead we used the result presented in the article, a whole new array of ressults could come from different features, due to time limitations the analisys was restricted to the same set of features to enable a possible comparison. There was insufficient time to perform the  leave-one-out cross-validation.
+In this report a random forest algorithm was applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed by `r Citet(bib, 1)`. Due to time constraints and incomplete data the accuracy obtained in this report are inferior to the ones in the literature (`r acct$Accuracy`% against 98% accuracy). However, if observed alone,  it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuracy within the estimated confidence interval `r acct$Accuracy` +- `r acct$AccuracySD` E (`r acc$AccuracyLower`,`r acc$AccuracyUpper`). The feature selection was not implemented in this report, instead we used the result presented in the article, a whole new array of results could come from different features, due to time limitations the analisys was restricted to the same set of features to enable a possible comparison. There was insufficient time to perform the  leave-one-subject-out cross-validation.
 
 #Bibliography
 
