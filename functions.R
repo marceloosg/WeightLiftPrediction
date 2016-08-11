@@ -62,9 +62,10 @@ plot.confusion.matrix=function(ctable){
         setorder(confusion.test,Predicted)
         confusion.test=within(confusion.test,Reference <- factor(ordered(Reference, levels = rev(sort(unique(Reference))))))
         rgb.pal=colorRampPalette(c("white","yellow","red","black"))
-        p2 <- ggplot(confusion.test, aes(Predicted, Reference)) %+% geom_tile(aes(fill = (value)) ) %+% 
-                scale_fill_gradientn(limits=c(0,1),colours=rgb.pal(11),breaks=0:10/10)%+% 
-                geom_text(aes(label=as.integer(value*100)/100),color="blue")
+        p2 <- ggplot(confusion.test, aes(Predicted, Reference)) %+% geom_tile(aes(fill = 1-log(0.00001+value)/log(0.00001)) ) %+% 
+                scale_fill_gradientn(limits=c(0,1),colours=rgb.pal(11),
+                                     breaks=0:10/10) %+% 
+                geom_text(aes(label=as.integer(value*10000)/10000),color="blue")
         list(con,p2)
 }
 select.features=function(cnames){

@@ -55,7 +55,7 @@ They combined the result ("Bagging") of 10 random forest used for classification
 # Processing Data
 
 ## Downloading Data
-```{r}
+```{r, cache=T}
 if(!file.exists("./csv/trainingraw.csv")) {
 training.status=download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","csv/trainingraw.csv")
 }
@@ -65,7 +65,7 @@ testing.status=download.file("https://d396qusza40orc.cloudfront.net/predmachlear
 ```
 
 ## Cleaning Data
-```{r}
+```{r, cache=T}
 if(!file.exists("./csv/training.csv")) {
 command="sed 's:\"\"::g' csv/trainingraw.csv > csv/training.csv"
 system(command)
@@ -74,7 +74,7 @@ system(command)
 
 ## Loading Data
 
-```{r}
+```{r,cache=T}
 suppressPackageStartupMessages(library(data.table))
 vec=rep("numeric",160)
 whichar=1:7
@@ -93,7 +93,7 @@ The training data set has the following dimensions: `r dim(trainingraw)`,
 we can see that this set is a subsample from the original set with 39243 rows.
 Most of the columns of this dataset are incomplete,  special attention must be given for imputing those columns since only those columns are selected for classification (see Selected Features at Introduction):
 
-```{r}
+```{r,cache=T}
  incompleteness=unlist(lapply(1:160,function(col){sum(is.na(trainingraw[[col]]))}))/dim(trainingraw)[1]*100
  incomplete.dt=data.table(percentage=incompleteness,description=colnames(trainingraw))
  highly.incomplete.columns=sum(incomplete.dt$percentage >97)
@@ -111,7 +111,7 @@ setdiff(testingraw$num_window,trainingraw$num_window)
 All the window numbers from the test set is contained within the training set, which is weird since 
 the class can be completely determined by the window_num. The proper exercise would be to give a whole new window to calculate the derived features. Let's assume that we don't know the class of the test dataset, then we will imput the derived feature from the window obtained in the training set into the test set.
 From the data we can see that 90% of the window size is about 0.9 seconds:
-```{r}
+```{r cache=T}
 explore=trainingraw
 explore$pt=as.double(explore$raw_timestamp_part_1)+explore$raw_timestamp_part_2/1000000
 h=hist(unique(explore[,.(pt,window_size=max(pt)-min(pt)),by=num_window])$window_size,breaks = 4,plot=F)
@@ -121,15 +121,16 @@ data.table(percentage=h$counts/sum(h$counts)*100, window_size=h$mids)
 ```
 From the literature the optimal window size is about 2.5 seconds. For optimal performance the window should be recalculated.
 Lets filter only the raw features from the dataset in order to calculate the derived columns:
-```{r,cache=F}
-notderived=setdiff(1:160,grep("avg|std|var|kurt|skew|min|max|ampl",incomplete.dt$desc))
+```{r,cache=T}
+notderived=setdiff(6:160,grep("avg|std|var|kurt|skew|min|max|ampl",incomplete.dt$desc))
 source("./functions.R")
 pre_training=imput.values(trainingraw)
 cnames=colnames(pre_training)
 selectedFeatures=select.features(cnames)
-#Only 17 features are selected by this function (See Review)
+#Only 17 derived features are selected by this function (See Review)
 trainings=select(pre_training,one_of(selectedFeatures+"num_window"))
-trainings=unique(merge(select(trainingraw,num_window,classe),
+#We merge the derived features with the relevant original ones
+trainings=(merge(select(trainingraw,one_of(incomplete.dt$desc[notderived]),classe),
                        trainings,all=T,by="num_window"))
 ```
 # Training
@@ -145,42 +146,54 @@ suppressMessages(library(caret))
 
 training=select(trainings,-num_window)
 training=training[complete.cases(training)]
-ctrl = trainControl(method="repeatedcv", number=10, repeats=5, selectionFunction = "oneSE")
+
 in_train = createDataPartition(training$classe, p=.75, list=FALSE)
-trf = train(data=training, classe ~ .,method="rf",
-            metric="Kappa", trcontrol=ctrl, subset=in_train)
+
+rf.training=training[in_train,]
+
+Folds <- createMultiFolds(y = rf.training$classe, k = 10, times = 5)
+
+rfControl <- trainControl(method = "repeatedcv", 
+                         number = 10, repeats = 10, index = Folds,
+                         selectionFunction = "oneSE",
+                         returnResamp = "final")
+
+
+trf = train(data=rf.training, classe ~ .,method="rf",
+            metric="Kappa", trcontrol=rfControl,ntree=10)
 t.table=trf$finalModel$confusion
 pt=plot.confusion.matrix(t.table)
-confusion=round(pt[[1]],digits=2)
+confusion=round(pt[[1]],digits=4)
 plot(pt[[2]])
-acct=as.data.table(round(trf$results,digits=2) )[1]
-
+acct=as.data.table(round(trf$results,digits=4) )[1]
+trf
+acct
 ```
- The expected accuracy and out-of-sample error is `r acct$Accuracy` +- `r acct$AccuracySD`, and `r acct$Kappa` +- `r acct$KappaSD` for the Kappa estimate.
+The  out-of-sample prediction error obtained from a 10-fold cross-validation with 5 repetitions is `r 1-acct$Accuracy`(`r acct$AccuracySD*1000`).
  
  
 # Validation
 
-
 ```{r,cache=T}
 #set.seed(1814)
-test= as.data.frame(training)[-in_train,]
+test= training[-in_train,]
 pred.rf = predict(trf, test, "raw")
 c=confusionMatrix(pred.rf, test$classe)
 c
-acc=as.data.table(t(round(c$overall,digits = 2)))
+acc=as.data.table(t(round(c$overall,digits = 4)))
 pt2=plot.confusion.matrix(c$table)
-con=round(pt2[[1]],digits=2)
+con=round(pt2[[1]],digits=4)
 plot(pt2[[2]])
+acc
+sum(pred.rf!=test$classe)
 ```
 
-We see an optimistic result in the confusion matrix of the training set, as usual, the accuracy lowers as we try to fit our model to unseen data. We can that the Precision for class A drops from `r confusion[1,][[1]]`% to `r con[1,][[1]]`%. The overall accuracy is about `r acc$Accuracy`% (`r acc$AccuracyLower`,`r acc$AccuracyUpper`), 95% CI. Even though there is an imbalance in the data, the reported balanced accuracy of the classes are still high. The accuracy obtained in this report is far lower than the one obtained in the original article (98.2 %), there are several factors that could be responsable for this:
+We see an optimistic result in the confusion matrix of the test set, the accuracy increases as we try to apply our model to unseen data.  The accuracy obtained in this report is different than the one obtained in the original article (98.2 %), there are several factors that could be responsable for this:
 
-* Unbalanced classed
-* Sub-optimal Window sizes (1,0s instead of 2.5s)
-* Probably different imputing criteria
+* Unbalanced classed (we sample the folds equally among classes)
+* Different Window sizes (1,0s instead of 2.5s)
+* Different imputing criteria
 * Reduced Sample (19622 samples against 39242)
-* Different number of forests (500 forest against 10)
 
 # Test set
 In the real dataset you must accquire a lot a data to create a window to which you apply the derived features ( see imput.value function). In this test set each problem provides only a single instance instead a 1,0s window worth of data. In that case, we retrieve the derived features using the num_window as a key. We could even retrieve the original class, since the num_window in the test set is contained in the training set, but we restrict to the derived columns in order to compare how the model would perform with real data. Since we are using data from the training set, we are actually getting a biased result. The alternative would be to model based on the raw features, contrary to the oriented in the original article. The model in that case would underperform.
@@ -202,10 +215,11 @@ result$classe=as.factor(result$classe)
 result$isequal=pred.test.rf==result$classe
 result
 ```
-That way we got `r sum(result$isequal)` out 20 cases correct, `r sum(result$isequal)/20*100`% accuracy, that is expected since we used data from the training set to imput the derived features of the test set. The validation part is a more reliable result for the accuracy of this model since the random forest is applied to completely unseen data.
+That way we got `r sum(result$isequal)` out 20 cases correct, `r sum(result$isequal)/20*100`% accuracy, that is expected since we used data from the training set to imput the derived features of the test set. The cross-validated value and the validation value represent more a reliable result for the accuracy of this model since the random forest model is applied to completely unseen and uncorrelated data.
 
 # Conclusion
-In this report a random forest algorithm was applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed by `r Citet(bib, 1)`. Due to time constraints and incomplete data the accuracy obtained in this report are inferior to the ones in the literature (`r acct$Accuracy`% against 98% accuracy). However, if observed alone,  it was a sucessfull aplication of a machine learning algorithm for classification. It was possible to correctly predict the out of sample error of the accuracy within the estimated confidence interval `r acct$Accuracy` +- `r acct$AccuracySD` E (`r acc$AccuracyLower`,`r acc$AccuracyUpper`). The feature selection was not implemented in this report, instead we used the result presented in the article, a whole new array of results could come from different features, due to time limitations the analisys was restricted to the same set of features to enable a possible comparison. There was insufficient time to perform the  leave-one-subject-out cross-validation.
+In this report a random forest algorithm was applied to the Human Activity Recognition problem of identifying how well an user performs an exercise. It was possible to construct a procedure similar to the one performed by `r Citet(bib, 1)`. It was  sucessful aplication of a machine learning algorithm for classification. It was possible to predict the out of sample error of the prediction which is above the validated confidence interval `r 1-acct$Accuracy`(`r acct$AccuracySD*10000`) E (`r 1-acc$AccuracyUpper`,`0.0008`). This shows that a single fold validations can underestimate the out-of-sample predction error.
+The feature selection was not implemented in this report, instead we used the result presented in the article, a whole new array of results could come from different features, due to time limitations the analisys was restricted to the same set of features to enable a possible comparison. There was insufficient time to perform the  leave-one-subject-out cross-validation. 
 
 #Bibliography
 

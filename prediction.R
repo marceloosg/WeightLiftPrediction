@@ -93,3 +93,5 @@ plot(results, type=c("g", "o"))
  #                               trControl = ctrl, preProcess = c("center","scale"), tuneLength = 4)
                 
 
+We can see that the Precision for class A drops from `r confusion[1,][[1]]`% to `r con[1,][[1]]`%. The overall accuracy is about `r acc$Accuracy`% (`r acc$AccuracyLower`,`r acc$AccuracyUpper`), 95% CI. Even though there is an imbalance in the data, the reported balanced accuracy of the classes are still high.
+
